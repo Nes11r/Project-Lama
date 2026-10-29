@@ -51,3 +51,34 @@ def table(df: pd.DataFrame, pred_cols: dict[str, str], by: list[str] | None = No
             rows.append(r)
     out = pd.DataFrame(rows)
     return out[(by or []) + [c for c in out.columns if c not in (by or [])]]
+
+
+def accuracy_summary(bt: pd.DataFrame) -> dict:
+    """Backtest → məntəqə üzrə panel cədvəlləri (fold, üfüq, ay). API bunu kv-dən oxuyur ki,
+    bulud konteyneri böyük backtest cədvəlini yaddaşa yükləməsin."""
+    bt = bt.assign(origin=pd.to_datetime(bt["origin"]))
+    out = {}
+    for sid, s in bt.groupby("station"):
+        folds = []
+        for fold, g in s.groupby("fold"):
+            folds.append({"fold": int(fold), "period": f"{g.origin.min():%Y-%m} – {g.origin.max():%Y-%m}",
+                          **{f"lgbm_{k}": v for k, v in metrics(g.q_actual, g.q50).items()},
+                          **{f"snaive_{k}": v for k, v in metrics(g.q_actual, g.bl_q_lag24).items()},
+                          **interval_metrics(g.q_actual, g.q10, g.q90)})
+        by_h = [{"h": int(h), "MAE": m["MAE"], "WAPE%": m["WAPE%"]}
+                for h, g in s.groupby("h") for m in [metrics(g.q_actual, g.q50)]]
+        by_month = [{"m": int(mo), "WAPE%": metrics(g.q_actual, g.q50)["WAPE%"]}
+                    for mo, g in s.groupby(s.origin.dt.month)]
+        out[str(sid)] = {"folds": folds, "by_horizon": by_h, "by_month": by_month}
+    return _finite(out)
+
+
+def _finite(o):
+    """JSONB NaN qəbul etmir → None."""
+    if isinstance(o, dict):
+        return {k: _finite(v) for k, v in o.items()}
+    if isinstance(o, list):
+        return [_finite(v) for v in o]
+    if isinstance(o, float) and not np.isfinite(o):
+        return None
+    return o

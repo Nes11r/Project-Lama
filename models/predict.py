@@ -33,6 +33,13 @@ EXPLAIN_GROUPS = {
     "Mövsüm / günün saatı": ["hour", "hour_sin", "hour_cos", "doy_sin", "doy_cos"],
 }
 
+# Yaddaşa qənaət: servis bütün tarixçəni yox, yalnız "indi" ətrafındakı pəncərəni saxlayır.
+# Ən uzun geriyə baxış: tarixçə səhifəsi (31 gün) + 1 gün lead + xüsusiyyətlər (168 saat + 8 gün qoruma).
+WINDOW_BACK = pd.Timedelta("60D")
+WINDOW_FWD = pd.Timedelta("5D")
+NEED_BACK = pd.Timedelta("55D")
+NEED_FWD = pd.Timedelta("2D")
+
 
 class Clock:
     """Demo (replay) rejimində "indiki an" (saxlama qatında: bütün instansiyalar eyni saatı görür)."""
@@ -60,15 +67,32 @@ class ForecastService:
     def reload(self):
         with self.lock:
             self.model, self.meta, self.clusterer = registry.load()
-            self.hourly = load_hourly()
-            self.w_actual = weather_table("actual")
-            try:
-                self.w_fc = weather_table("forecast")
-            except FileNotFoundError:
-                self.w_fc = self.w_actual
-            self._clusters = self.clusterer.transform(self.hourly) if self.clusterer else None
+            self._load_window(self.clock.now())
             self.events = load_yaml("events").get("events", []) or []
             log.info("Servis yükləndi: model %s", self.meta["version"])
+
+    def _load_window(self, now: pd.Timestamp):
+        lo = now - WINDOW_BACK
+        hi = None if load_config()["demo"]["mode"] == "live" else now + WINDOW_FWD
+        self.hourly = None  # köhnə pəncərə yenisi yüklənməzdən əvvəl buraxılır
+        self.hourly = load_hourly(lo, hi)
+        self.w_actual = weather_table("actual", lo, hi)
+        try:
+            self.w_fc = weather_table("forecast", lo, hi)
+        except FileNotFoundError:
+            self.w_fc = self.w_actual
+        self._clusters = self.clusterer.transform(self.hourly) if self.clusterer else None
+        self.window = (lo, hi)
+        log.info("Data pəncərəsi: %s – %s (%d sətir)", lo, hi or "son", len(self.hourly))
+
+    def ensure_window(self) -> pd.Timestamp:
+        """Demo saatı pəncərədən çıxıbsa datanı yenidən yüklə. "İndi"ni qaytarır."""
+        now = self.clock.now()
+        with self.lock:
+            lo, hi = self.window
+            if now - NEED_BACK < lo or (hi is not None and now + NEED_FWD > hi):
+                self._load_window(now)
+        return now
 
     def data_end(self, sid: str) -> pd.Timestamp:
         return self.hourly.loc[self.hourly.station == sid, "ts"].max()
@@ -243,4 +267,5 @@ def get_service() -> ForecastService:
     global _service
     if _service is None:
         _service = ForecastService()
+    _service.ensure_window()
     return _service

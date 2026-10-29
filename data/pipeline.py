@@ -43,10 +43,11 @@ def run() -> pd.DataFrame:
     return hourly
 
 
-def load_hourly() -> pd.DataFrame:
+def load_hourly(start=None, end=None) -> pd.DataFrame:
     if not has_table("hourly"):
-        return run()
-    df = read_table("hourly")
+        df = run()
+        return df if start is None and end is None else df[df.ts.between(start or df.ts.min(), end or df.ts.max())]
+    df = read_table("hourly", start=start, end=end)
     df["ts"] = pd.to_datetime(df["ts"])
     return df
 

@@ -52,8 +52,12 @@ def main(run_eval: bool, train: bool, offline_weather: bool):
         run_evaluate(quick=False)
     else:
         bt = path("processed") / "backtest.parquet"
-        if not has_table("backtest") and bt.exists():
-            write_table("backtest", pd.read_parquet(bt))
+        if bt.exists():
+            from models.metrics import accuracy_summary
+            df = pd.read_parquet(bt)
+            if not has_table("backtest"):
+                write_table("backtest", df)
+            kv_set("accuracy", accuracy_summary(df))  # API backtest cədvəlini yox, bu xülasəni oxuyur
         mf = path("reports") / "model" / "metrics.json"
         if mf.exists():
             kv_set("model_metrics", json.loads(mf.read_text(encoding="utf-8")))

@@ -31,7 +31,7 @@ from features.build import FEATURE_GROUPS, feature_list, make_dataset
 from features.context import build_context, weather_table
 from models.baselines import add_baselines, baseline_cols
 from models.lgbm import QuantileForecaster
-from models.metrics import interval_metrics, metrics, table
+from models.metrics import accuracy_summary, interval_metrics, metrics, table
 
 log = logging.getLogger(__name__)
 ABLATION = [["base"], ["base", "weather"], ["base", "weather", "calendar"],
@@ -91,6 +91,7 @@ def run(quick: bool = False) -> dict:
 
     bt = pd.concat(preds, ignore_index=True)
     write_table("backtest", bt)
+    kv_set("accuracy", accuracy_summary(bt))
 
     # --- Cədvəllər
     cols = {**baseline_cols(), "LightGBM (proqnoz hava)": "q50", "LightGBM (faktiki hava)": "q50_actual_wx"}

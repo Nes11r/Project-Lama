@@ -88,19 +88,32 @@ def write_table(name: str, df: pd.DataFrame) -> None:
     log.info("Postgres: %s ← %d sətir", name, len(df))
 
 
-def read_table(name: str, columns: list[str] | None = None) -> pd.DataFrame:
+def read_table(name: str, columns: list[str] | None = None,
+               start=None, end=None, ts_col: str = "ts") -> pd.DataFrame:
+    """start/end verilərsə yalnız ts_col ∈ [start, end] sətirləri oxunur (yaddaşa qənaət)."""
+    lo = None if start is None else pd.Timestamp(start)
+    hi = None if end is None else pd.Timestamp(end)
     if not using_db():
         p = _local("processed", f"{name}.parquet")
         if not p.exists():
             raise FileNotFoundError(name)
-        return pd.read_parquet(p, columns=columns)
-    from sqlalchemy import inspect
+        filters = ([(ts_col, ">=", lo)] if lo is not None else []) + ([(ts_col, "<=", hi)] if hi is not None else [])
+        return pd.read_parquet(p, columns=columns, filters=filters or None)
+    from sqlalchemy import inspect, text
     eng = engine()
     if not inspect(eng).has_table(name):
         raise FileNotFoundError(name)
     cols = "*" if not columns else ", ".join(f'"{c}"' for c in columns)
+    cond, params = [], {}
+    if lo is not None:
+        cond.append(f'"{ts_col}" >= :lo')
+        params["lo"] = lo.to_pydatetime()
+    if hi is not None:
+        cond.append(f'"{ts_col}" <= :hi')
+        params["hi"] = hi.to_pydatetime()
+    where = f" WHERE {' AND '.join(cond)}" if cond else ""
     with eng.connect() as c:
-        return pd.read_sql(f'SELECT {cols} FROM "{name}"', c)
+        return pd.read_sql(text(f'SELECT {cols} FROM "{name}"{where}'), c, params=params)
 
 
 def has_table(name: str) -> bool:

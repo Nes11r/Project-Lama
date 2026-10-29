@@ -16,20 +16,21 @@ from features.weather_features import WEATHER_COLS, calibrate_hdd_base
 log = logging.getLogger(__name__)
 
 
-def _read(name: str) -> pd.DataFrame:
-    df = read_table(name)
+def _read(name: str, start=None, end=None) -> pd.DataFrame:
+    df = read_table(name, start=start, end=end)
     df["ts"] = pd.to_datetime(df["ts"])
     return df
 
 
-def weather_table(kind: str) -> dict[str, pd.DataFrame]:
+def weather_table(kind: str, start=None, end=None) -> dict[str, pd.DataFrame]:
     """kind:
     actual   — faktiki hava (təlim; optimist qiymətləndirmə)
     forecast — 1 gün əvvəlki proqnoz; proqnozu olmayan dəyişən/dövr faktiki ilə tamamlanır
                (temperatur 2021-03-dən, digərləri 2024-01-dən proqnozdur)
+    start/end — yalnız bu aralıq (API: "indi" ətrafındakı pəncərə)
     """
-    act = _read("weather_actual")
-    fc = _read("weather_fc_d1") if kind != "actual" else None
+    act = _read("weather_actual", start, end)
+    fc = _read("weather_fc_d1", start, end) if kind != "actual" else None
     out = {}
     for sid in stations():
         a = act[act.station == sid].set_index("ts")[WEATHER_COLS]

@@ -37,10 +37,15 @@ if os.environ.get("PANEL_PASSWORD") and not st.session_state.get("auth"):
 def api(method: str, url: str, **kw):
     try:
         r = requests.request(method, API + url, timeout=120, headers=HEADERS, **kw)
-        if r.status_code >= 400:
-            st.error(f"API xətası {r.status_code}: {r.json().get('detail', r.text)}")
+        try:
+            body = r.json()
+        except ValueError:
+            st.error(f"API JSON qaytarmadı ({API + url}, HTTP {r.status_code}): {r.text[:200]}")
             return None
-        return r.json()
+        if r.status_code >= 400:
+            st.error(f"API xətası {r.status_code}: {body.get('detail', r.text) if isinstance(body, dict) else r.text}")
+            return None
+        return body
     except requests.RequestException as e:
         st.error(f"API ilə əlaqə yoxdur ({API}): {e}")
         return None

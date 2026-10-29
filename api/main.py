@@ -23,7 +23,8 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from pydantic import BaseModel
 
 from core.config import load_config, path, stations
-from core.storage import blob_put, describe, has_table, kv_get, kv_set, read_table
+from core.storage import blob_put, describe, has_table, kv_get, kv_set, read_table, using_db
+from data.pipeline import load_hourly
 from decision.alerts import evaluate_alerts, limits, save_limits
 from decision.recommendations import recommendations
 from external.common import read_status
@@ -199,12 +200,14 @@ def history(sid: str, start: str | None = None, end: str | None = None, with_for
     now = svc.clock.now()
     end_ts = min(pd.Timestamp(end) if end else now, now)
     start_ts = pd.Timestamp(start) if start else end_ts - pd.Timedelta("7D")
-    st = svc.hourly[(svc.hourly.station == sid) & (svc.hourly.ts >= start_ts) & (svc.hourly.ts <= end_ts)]
+    lo, hi = svc.window
+    src = svc.hourly if start_ts >= lo and (hi is None or end_ts <= hi) else load_hourly(start_ts, end_ts)
+    st = src[(src.station == sid) & (src.ts >= start_ts) & (src.ts <= end_ts)]
     cols = ["ts", "q_raw", "q_clean", "p_kpa", "t_c", "dp_kpa", "f_reconstructed", "f_spike", "f_event", "train_ok"]
     out = {"station": sid, "actual": st[cols]}
     if with_forecast:
         hours = int((end_ts - start_ts) / pd.Timedelta("1h")) + 1
-        if hours <= 24 * 31:
+        if hours <= 24 * 31 and start_ts >= lo + pd.Timedelta("22D"):
             out["day_ahead"] = svc.recent_forecast_vs_actual(sid, hours=hours)
     return _clean(out)
 
@@ -212,34 +215,19 @@ def history(sid: str, start: str | None = None, end: str | None = None, with_for
 @app.get(f"{V1}/accuracy/{{sid}}")
 def accuracy(sid: str):
     _check(sid)
-    from models.metrics import interval_metrics, metrics
-    if not has_table("backtest"):
+    acc = kv_get("accuracy")
+    if acc is None and not has_table("backtest"):
         raise HTTPException(404, "Backtest yoxdur: python -m models.evaluate")
-    bt = _backtest()
-    bt = bt[bt.station == sid]
-    rows = []
-    for fold, g in bt.groupby("fold"):
-        rows.append({"fold": int(fold), "period": f"{g.origin.min():%Y-%m} – {g.origin.max():%Y-%m}",
-                     **{f"lgbm_{k}": v for k, v in metrics(g.q_actual, g.q50).items()},
-                     **{f"snaive_{k}": v for k, v in metrics(g.q_actual, g.bl_q_lag24).items()},
-                     **interval_metrics(g.q_actual, g.q10, g.q90)})
-    by_h = [{"h": int(h), "MAE": metrics(g.q_actual, g.q50)["MAE"], "WAPE%": metrics(g.q_actual, g.q50)["WAPE%"]}
-            for h, g in bt.groupby("h")]
-    by_month = bt.assign(m=bt.origin.dt.month).groupby("m").apply(
-        lambda g: metrics(g.q_actual, g.q50)["WAPE%"]).rename("WAPE%").reset_index()
-    return _clean({"station": sid, "folds": rows, "by_horizon": by_h, "by_month": by_month,
-                   "global": kv_get("model_metrics", {}) or {}})
-
-
-_BT: pd.DataFrame | None = None
-
-
-def _backtest() -> pd.DataFrame:
-    global _BT
-    if _BT is None:
-        _BT = read_table("backtest", ["station", "fold", "origin", "h", "q_actual", "q10", "q50", "q90", "bl_q_lag24"])
-        _BT["origin"] = pd.to_datetime(_BT["origin"])
-    return _BT
+    if acc is None and using_db():  # bulud: 440k sətirlik backtest yaddaşa sığmır
+        raise HTTPException(404, "Dəqiqlik xülasəsi yoxdur: lokal maşında python scripts/publish.py --no-train")
+    if acc is None:  # lokal köhnə qurulum: xülasə bir dəfə hesablanır və saxlanılır
+        from models.metrics import accuracy_summary
+        acc = _clean(accuracy_summary(read_table(
+            "backtest", ["station", "fold", "origin", "h", "q_actual", "q10", "q50", "q90", "bl_q_lag24"])))
+        kv_set("accuracy", acc)
+    if sid not in acc:
+        raise HTTPException(404, f"Bu məntəqə üçün backtest yoxdur: {sid}")
+    return _clean({"station": sid, **acc[sid], "global": kv_get("model_metrics", {}) or {}})
 
 
 # ---------------------------------------------------------------- xəbərdarlıqlar

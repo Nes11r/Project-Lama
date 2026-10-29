@@ -7,7 +7,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerCommand: sh scripts/start_cloud.sh
     region: frankfurt
-    plan: starter            # pulsuz plan (512 MB) yaddaş üçün dar ola bilər
+    plan: free               # 512 MB; "Out of memory" olarsa → Standard (2 GB)
     healthCheckPath: /api/v1/health
     autoDeploy: true
     envVars:
@@ -22,7 +22,7 @@ services:
     dockerfilePath: ./Dockerfile
     dockerCommand: sh scripts/start_panel.sh
     region: frankfurt
-    plan: starter
+    plan: free
     autoDeploy: true
     envVars:
       - key: API_URL          # lama-api servisinin ünvanı, məs. https://lama-api.onrender.com

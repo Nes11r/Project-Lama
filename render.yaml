@@ -1,0 +1,33 @@
+# Render Blueprint: New → Blueprint → bu repo. İki servis eyni Docker image-dən.
+# Gizli dəyərlər (sync: false) Render panelində bir dəfə daxil edilir, repo-da saxlanmır.
+services:
+  - type: web
+    name: lama-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: sh scripts/start_cloud.sh
+    region: frankfurt
+    plan: starter            # pulsuz plan (512 MB) yaddaş üçün dar ola bilər
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL     # Neon bağlantı sətri
+        sync: false
+      - key: API_TOKEN        # yazma əməliyyatları üçün gizli açar (panel ilə eyni)
+        sync: false
+
+  - type: web
+    name: lama-panel
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: sh scripts/start_panel.sh
+    region: frankfurt
+    plan: starter
+    autoDeploy: true
+    envVars:
+      - key: API_URL          # lama-api servisinin ünvanı, məs. https://lama-api.onrender.com
+        sync: false
+      - key: API_TOKEN
+        sync: false
+      - key: PANEL_PASSWORD   # panelə giriş parolu
+        sync: false

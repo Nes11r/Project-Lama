@@ -1,0 +1,19 @@
+# Qeydiyyatlı hadisələr: planlı təmir, qəzalar, təchizat dəyişiklikləri.
+# - exclude_from_training: həmin saatlar modelin təlimindən və dəqiqlik hesablamasından çıxarılır
+# - suppress_alerts:       "faktiki ≠ proqnoz" xəbərdarlıqları susdurulur (səbəb məlumdur)
+# - adaptive_scaling:      canlı proqnoz hadisə dövründəki faktiki/proqnoz nisbəti ilə korrektə olunur
+events:
+  - id: "2024-07-09-xezer-temir"
+    station: turkan
+    start: "2024-07-09 10:00"
+    end: null                        # bitmə tarixi məlum deyil (data sonuna qədər bərpa görünmür)
+    type: planned_outage
+    title: "Planlı təmir-quraşdırma: təchizatın qismən dayandırılması"
+    description: >-
+      Yasamal, Binəqədi, Səbail, Xətai və Xəzər rayonlarında təmir-quraşdırma işləri ilə əlaqədar
+      qaz təchizatı dayandırılıb. Xəzər rayonu: Türkan Üzümçülük və Bağlar yaşayış massivləri.
+      Türkan məntəqəsində sərf ~73% azalıb (17 → 4.5 min m³/gün).
+    source: "Azəriqaz / Pravda.az"
+    exclude_from_training: true
+    suppress_alerts: true
+    adaptive_scaling: true

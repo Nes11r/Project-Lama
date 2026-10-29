@@ -1,0 +1,132 @@
+# Qaz sərfiyyatı proqnozu — əsas konfiqurasiya
+# Bütün yollar layihə kökünə nisbətəndir. Gizli açarlar .env faylındadır, burada yox.
+
+project:
+  timezone: Asia/Baku            # Azərbaycan 2016-dan yay/qış vaxtına keçmir (UTC+4)
+  # ROC damğası "01:00" = 00:00–01:00 intervalı (saat-sonu). Daxildə interval BAŞLANĞICI saxlanılır.
+  timestamp_convention: hour_ending
+
+paths:
+  raw_dir: dataset
+  incoming_dir: dataset/incoming   # yeni CSV-lər bura (və ya API ilə) atılır
+  processed: storage/processed
+  cache: storage/cache
+  models: storage/models
+  runtime: storage/runtime         # canlı proqnoz jurnalı, xəbərdarlıqlar, limitlər
+  reports: reports
+  calendar_overrides: config/calendar_overrides.yaml
+  events: config/events.yaml
+
+# Məntəqələr. Koordinatlar TƏXMİNİDİR (yaşayış məntəqəsinin mərkəzi) — dəqiq xidmət ərazisi verilməyib.
+stations:
+  sumqayit4:
+    name: "Sumqayıt Şəhər-4"
+    file_patterns: ["Sumqayıt Şəhər-4*.csv", "sumqayit4*.csv"]
+    area: {lat: 40.5897, lon: 49.6686, radius_km: 4.0}
+    weather_points:                # böyük ərazi → bir neçə nöqtənin çəkili ortalaması
+      - {lat: 40.5897, lon: 49.6686, weight: 0.5}
+      - {lat: 40.6120, lon: 49.6400, weight: 0.25}
+      - {lat: 40.5700, lon: 49.6950, weight: 0.25}
+    limits:                         # FƏRZİYYƏ: tarixi p99 / maksimum əsasında; operator dəqiqləşdirməlidir
+      peak_flow_warning: 49.0      # min m³/saat
+      peak_flow_critical: 56.0
+      min_pressure_kpa: 300        # mütləq təzyiq
+  merdekan:
+    name: "Mərdəkan"
+    file_patterns: ["Mərdəkan*.csv", "merdekan*.csv"]
+    area: {lat: 40.4925, lon: 50.1436, radius_km: 3.0}
+    weather_points:
+      - {lat: 40.4925, lon: 50.1436, weight: 0.6}
+      - {lat: 40.5000, lon: 50.1100, weight: 0.4}
+    limits:
+      peak_flow_warning: 7.4
+      peak_flow_critical: 8.6
+      min_pressure_kpa: 360
+  turkan:
+    name: "Türkan qəsəbəsi"
+    file_patterns: ["Türkan*.csv", "turkan*.csv"]
+    area: {lat: 40.3640, lon: 50.2150, radius_km: 2.5}
+    weather_points:
+      - {lat: 40.3640, lon: 50.2150, weight: 1.0}
+    limits:
+      peak_flow_warning: 7.5
+      peak_flow_critical: 8.8
+      min_pressure_kpa: 320
+
+cleaning:
+  valid_ranges:                     # bu hüdudlardan kənar → sensor xətası (NaN)
+    sg: [0.70, 0.80]
+    t_c: [-15, 60]
+    p_kpa: [150, 900]
+    dp_kpa: [-0.5, 70]
+    q_hour: [0, null]
+  depressurized_p_kpa: 150          # mütləq təzyiq ≈ atmosfer → xətt boşaldılıb / bağlanıb
+  dp_saturation_kpa: 68.5           # ΔP ötürücüsü diapazonun sonunda → sərf aşağı ölçülə bilər
+  flatline_hours: 6                 # ≥ N saat dəyişməyən sərf → donmuş sensor
+  spike_z: 6.0                      # robust z-hədd (həftəlik median ± MAD)
+  spike_window_h: 168               # eyni saat üzrə ±7 gün
+  spike_ratio_bounds: [0.5, 3.0]    # həm də median-ın bu nisbətlərindən kənar olmalıdır
+  spike_max_run_h: 6                # bundan uzun sapmalar "uzun anomaliya" sayılır (silinmir, təlimdən çıxarılır)
+  interp_max_gap_h: 6               # qısa boşluqlar xətti interpolasiya ilə doldurulur
+  reconstruct_max_missing_h: 6      # gündəlik "Cəmi" ilə bərpa olunan maksimum itən saat
+  reconstruct_ratio_bounds: [0.2, 3.0]
+
+weather:
+  base_urls:
+    archive: https://archive-api.open-meteo.com/v1/archive
+    previous_runs: https://previous-runs-api.open-meteo.com/v1/forecast
+    forecast: https://api.open-meteo.com/v1/forecast
+  variables: [temperature_2m, apparent_temperature, relative_humidity_2m, wind_speed_10m,
+              shortwave_radiation, cloud_cover, precipitation]
+  history_start: "2017-12-25"
+  previous_runs_start: "2021-03-25"   # "1 gün əvvəlki proqnoz" bu tarixdən mövcuddur
+  request_pause_s: 0.6
+  timeout_s: 90
+  hdd_base_default: 18.0              # kalibrasiya alınmasa istifadə olunur
+
+population:
+  worldpop_url: https://api.worldpop.org/v1/services/stats
+  worldpop_dataset: wpgppop
+  worldpop_year: 2020
+  overpass_url: https://overpass-api.de/api/interpreter
+  user_agent: "socar-gas-forecast-demo/0.1"
+
+forecast:
+  horizon_h: 24
+  quantiles: [0.1, 0.5, 0.9]
+  train_origin_step_h: 3            # təlim üçün hər 3 saatdan bir proqnoz başlanğıcı
+  eval_origin_step_h: 3
+  target_transform: log1p
+  cv_folds:                          # walk-forward: hər fold-da təlim = fold başlanğıcına qədər bütün data
+    - ["2022-07-01", "2022-12-31"]
+    - ["2023-01-01", "2023-06-30"]
+    - ["2023-07-01", "2023-12-31"]
+    - ["2024-01-01", "2024-08-31"]
+  lightgbm:
+    n_estimators: 600
+    learning_rate: 0.05
+    num_leaves: 63
+    min_child_samples: 50
+    subsample: 0.8
+    subsample_freq: 1
+    colsample_bytree: 0.8
+    reg_lambda: 1.0
+    verbose: -1
+
+alerts:
+  deviation_z: 3.0                  # |faktiki − median| / ((q90 − q10)/2.56) > z
+  deviation_min_hours: 2            # ardıcıl saat sayı
+  night_excess_hours: [2, 5]        # gecə minimum sərfi (sızma göstəricisi) üçün saatlar
+  night_excess_ratio: 1.25          # faktiki gecə sərfi > proqnoz × ratio → mümkün sızma
+  flatline_hours: 4
+
+demo:
+  mode: replay                      # replay | live
+  # replay: tarixi data "real vaxt" kimi oynadılır; "indiki an" = demo.now
+  now: "2024-01-20 08:00"
+
+automation:
+  enabled: false                    # TƏHLÜKƏSİZLİK: sistem yalnız tövsiyə rejimindədir. ROC/SCADA-ya yazma YOXDUR.
+
+api:
+  base_url: http://localhost:8000

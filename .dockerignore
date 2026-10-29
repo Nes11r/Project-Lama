@@ -1,0 +1,7 @@
+storage/
+reports/
+dataset/
+.env
+**/__pycache__
+.pytest_cache
+*.log

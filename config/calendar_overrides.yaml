@@ -1,0 +1,48 @@
+# Əl ilə yenilənən təqvim düzəlişləri (Nazirlər Kabinetinin qərarları, karantin, məktəb tətilləri).
+# `holidays` kitabxanası əsasdır; bu fayl onu TAMAMLAYIR və ya DÜZƏLDİR.
+# verified: false — mənbə ilə yoxlanmayıb, operator/analitik təsdiq etməlidir.
+
+# Kitabxanada olmayan əlavə qeyri-iş günləri
+extra_nonworking_days: []
+#  - {date: "2018-xx-xx", name: "...", verified: false}
+
+# Kitabxanada qeyri-iş günü kimi gələn, amma əslində iş günü olanlar
+remove_nonworking_days: []
+
+# Köçürmə nəticəsində İŞ GÜNÜ olan şənbə/bazar günləri.
+# 2020–2024 kitabxanadan avtomatik oxunur ("... ilə əvəz edilmişdir"); burada yoxlama üçün siyahılanıb.
+# DİQQƏT: 2018 və 2019 üçün kitabxanada köçürmə yoxdur — həmin illərin NK qərarları yoxlanmalıdır.
+working_weekend_days:
+  - {date: "2019-12-28", note: "→ 2020-01-03", source: holidays-lib, verified: false}
+  - {date: "2019-12-29", note: "→ 2020-01-06", source: holidays-lib, verified: false}
+  - {date: "2020-03-29", note: "→ 2020-03-27", source: holidays-lib, verified: false}
+  - {date: "2020-05-31", note: "→ 2020-05-27", source: holidays-lib, verified: false}
+  - {date: "2021-05-08", note: "→ 2021-05-11", source: holidays-lib, verified: false}
+  - {date: "2021-05-16", note: "→ 2021-05-12", source: holidays-lib, verified: false}
+  - {date: "2021-07-17", note: "→ 2021-07-19", source: holidays-lib, verified: false}
+  - {date: "2022-03-05", note: "→ 2022-03-07", source: holidays-lib, verified: false}
+  - {date: "2022-11-05", note: "→ 2022-11-07", source: holidays-lib, verified: false}
+  - {date: "2023-06-24", note: "→ 2023-06-27", source: holidays-lib, verified: false}
+  - {date: "2023-06-25", note: "→ 2023-06-30", source: holidays-lib, verified: false}
+  - {date: "2023-11-04", note: "→ 2023-11-10", source: holidays-lib, verified: false}
+  - {date: "2023-12-30", note: "→ 2024-01-04", source: holidays-lib, verified: false}
+  - {date: "2024-01-07", note: "→ 2024-01-05", source: holidays-lib, verified: false}
+  - {date: "2024-04-06", note: "→ 2024-04-12", source: holidays-lib, verified: false}
+  - {date: "2024-11-16", note: "→ 2024-11-12", source: holidays-lib, verified: false}
+  - {date: "2024-11-23", note: "→ 2024-11-13", source: holidays-lib, verified: false}
+  - {date: "2024-12-28", note: "→ 2024-12-30", source: holidays-lib, verified: false}
+
+# Məktəb tətilləri (TƏXMİNİ — Elm və Təhsil Nazirliyinin illik əmrləri ilə yoxlanmalıdır)
+school_holidays:
+  default_rules:             # tarixi əmr verilməyən illər üçün
+    - {name: "Qış tətili", start: "12-30", end: "01-09"}
+    - {name: "Novruz tətili", start: "03-18", end: "03-27"}
+    - {name: "Yay tətili", start: "06-15", end: "09-14"}
+  periods: []                # dəqiq tarixlər: - {start: "2023-12-30", end: "2024-01-09", name: "...", verified: true}
+
+# Xüsusi rejimlər — istehlakçıların evdə olma vaxtına güclü təsir (COVID-19). TƏXMİNİ tarixlər.
+special_periods:
+  - {name: "Xüsusi karantin rejimi (evdə qal)", start: "2020-03-24", end: "2020-05-17", level: 2, verified: false}
+  - {name: "Sərtləşdirilmiş karantin (Bakı, Sumqayıt)", start: "2020-06-21", end: "2020-08-04", level: 2, verified: false}
+  - {name: "Sərtləşdirilmiş karantin (qış)", start: "2020-12-14", end: "2021-01-31", level: 2, verified: false}
+  - {name: "Məktəblər onlayn", start: "2020-03-03", end: "2021-01-31", level: 1, verified: false}

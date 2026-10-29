@@ -1,0 +1,11 @@
+# Gizli və data — heç vaxt repo-ya düşmür
+.env
+dataset/
+storage/
+reports/
+*.parquet
+*.csv
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc

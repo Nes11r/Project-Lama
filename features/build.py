@@ -86,7 +86,7 @@ def _target_features(ctx: FeatureContext, sid: str, g: pd.DataFrame) -> pd.DataF
     t = t.join(cal)
     for k, v in (ctx.static.get(sid) or {}).items():
         if k in FEATURE_GROUPS["population"]:
-            t[k] = v
+            t[k] = np.nan if v is None else float(v)  # None → object tipi LightGBM-i sındırır
     t["station_code"] = station_code(sid)
     return t
 

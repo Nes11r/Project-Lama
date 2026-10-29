@@ -177,8 +177,8 @@ class ForecastService:
         booster = self.model.models[0.5]
         feats = self.model.features
         # LightGBM daxili TreeSHAP: son sütun baza dəyəridir
-        sv_f = pd.DataFrame(booster.predict(X[feats], pred_contrib=True)[:, :-1], columns=feats).mean()
-        sv_r = pd.DataFrame(booster.predict(R[feats], pred_contrib=True)[:, :-1], columns=feats).mean()
+        sv_f = pd.DataFrame(booster.predict(self.model.matrix(X), pred_contrib=True)[:, :-1], columns=feats).mean()
+        sv_r = pd.DataFrame(booster.predict(self.model.matrix(R), pred_contrib=True)[:, :-1], columns=feats).mean()
         delta = sv_f - sv_r
         contrib = {}
         for g, fs in EXPLAIN_GROUPS.items():
@@ -198,8 +198,13 @@ class ForecastService:
             text = f"{g}: {pct:+.0f}%"
             if g.startswith("Hava"):
                 trend = "soyuma" if t_next < t_prev - 0.5 else ("istiləşmə" if t_next > t_prev + 0.5 else "sabit hava")
-                text = (f"Gözlənilən {trend} (orta temperatur {t_prev:.1f}°C → {t_next:.1f}°C) "
-                        f"səbəbindən sərfiyyat {pct:+.0f}%")
+                consistent = (trend == "soyuma" and pct > 0) or (trend == "istiləşmə" and pct < 0)
+                if consistent:
+                    text = (f"Gözlənilən {trend} (orta temperatur {t_prev:.1f}°C → {t_next:.1f}°C) "
+                            f"səbəbindən sərfiyyat {pct:+.0f}%")
+                else:  # temperatur istiqaməti ilə uyğun deyil → digər hava amilləri (radiasiya, külək) üstündür
+                    text = (f"Hava amilləri (orta temperatur {t_prev:.1f}°C → {t_next:.1f}°C, "
+                            f"külək/günəş radiasiyası daxil): {pct:+.0f}%")
             elif g.startswith("Təqvim"):
                 nw = int(X.is_nonworking.max()), int(R.is_nonworking.max())
                 hol = X.loc[X.is_holiday == 1, "ts"]

@@ -34,9 +34,18 @@ class QuantileForecaster:
             self.models[q] = lgb.train(params, ds, num_boost_round=n_est)
         return self
 
+    def matrix(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Model girişi: bütün sütunlar ədədi (object → float, NaN saxlanılır)."""
+        M = X[self.features]
+        obj = M.columns[M.dtypes == object]
+        if len(obj):
+            M = M.copy()
+            M[obj] = M[obj].apply(pd.to_numeric, errors="coerce")
+        return M
+
     def predict_log(self, X: pd.DataFrame) -> pd.DataFrame:
-        out = pd.DataFrame({f"q{int(q * 100)}": m.predict(X[self.features]) for q, m in self.models.items()},
-                           index=X.index)
+        M = self.matrix(X)
+        out = pd.DataFrame({f"q{int(q * 100)}": m.predict(M) for q, m in self.models.items()}, index=X.index)
         # Kvantil kəsişməsinin qarşısını al
         out[:] = np.sort(out.to_numpy(), axis=1)
         return out

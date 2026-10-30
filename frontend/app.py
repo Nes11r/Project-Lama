@@ -6,6 +6,7 @@ Mühit:      API_URL (default http://localhost:8000)
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -34,13 +35,44 @@ if os.environ.get("PANEL_PASSWORD") and not st.session_state.get("auth"):
     st.stop()
 
 
+WAKE_STATUS = {502, 503, 504}  # Render free: API yuxudan oyananda proxy bu kodları qaytarır
+WAKE_TIMEOUT_S = 120
+
+
+def _request(method: str, url: str, **kw) -> requests.Response:
+    """GET sorğusu API oyanana qədər təkrarlanır; yazma sorğuları təkrarlanmır."""
+    deadline = time.monotonic() + WAKE_TIMEOUT_S
+    note = None
+    try:
+        while True:
+            try:
+                r = requests.request(method, API + url, timeout=120, headers=HEADERS, **kw)
+                if r.status_code not in WAKE_STATUS or method != "GET":
+                    return r
+            except requests.ConnectionError:
+                if method != "GET":
+                    raise
+                r = None
+            if time.monotonic() > deadline:
+                if r is None:
+                    raise requests.ConnectionError("API cavab vermir")
+                return r
+            if note is None:
+                note = st.info("API oyanır (pulsuz serverdə ilk açılış 1 dəqiqəyə qədər çəkir)...")
+            time.sleep(5)
+    finally:
+        if note is not None:
+            note.empty()
+
+
 def api(method: str, url: str, **kw):
     try:
-        r = requests.request(method, API + url, timeout=120, headers=HEADERS, **kw)
+        r = _request(method, url, **kw)
         try:
             body = r.json()
         except ValueError:
-            st.error(f"API JSON qaytarmadı ({API + url}, HTTP {r.status_code}): {r.text[:200]}")
+            st.error(f"API JSON qaytarmadı ({API + url}, HTTP {r.status_code}). "
+                     "Səhifəni bir neçə saniyədən sonra yeniləyin.")
             return None
         if r.status_code >= 400:
             st.error(f"API xətası {r.status_code}: {body.get('detail', r.text) if isinstance(body, dict) else r.text}")
@@ -52,8 +84,18 @@ def api(method: str, url: str, **kw):
 
 
 @st.cache_data(ttl=30)
+def _stations_cached():
+    res = api("GET", "/stations")
+    if not res:
+        raise RuntimeError("stations")  # uğursuz cavab keşə yazılmır
+    return res
+
+
 def get_stations():
-    return api("GET", "/stations") or []
+    try:
+        return _stations_cached()
+    except RuntimeError:
+        return []
 
 
 def fmt(v, nd=2, unit=""):
@@ -265,7 +307,7 @@ def page_settings():
             if api("PUT", f"/settings/limits/{sid}",
                    json={"peak_flow_warning": w, "peak_flow_critical": cr, "min_pressure_kpa": p}):
                 st.success("Saxlanıldı")
-                get_stations.clear()
+                _stations_cached.clear()
 
     st.subheader("Yeni data yüklə (ROC CSV ixracı)")
     st.caption("Fayl `dataset/incoming/` qovluğuna yazılır, təmizləmə pipeline-ı avtomatik işə düşür. "

@@ -261,11 +261,18 @@ class ForecastService:
 
 
 _service: ForecastService | None = None
+_service_lock = threading.Lock()
+
+
+def service_ready() -> bool:
+    return _service is not None
 
 
 def get_service() -> ForecastService:
     global _service
     if _service is None:
-        _service = ForecastService()
+        with _service_lock:  # eyni anda iki yükləmə yaddaşı ikiqat artırardı
+            if _service is None:
+                _service = ForecastService()
     _service.ensure_window()
     return _service

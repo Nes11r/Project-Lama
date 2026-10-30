@@ -36,7 +36,7 @@ if os.environ.get("PANEL_PASSWORD") and not st.session_state.get("auth"):
 
 
 WAKE_STATUS = {502, 503, 504}  # Render free: API yuxudan oyananda proxy bu kodları qaytarır
-WAKE_TIMEOUT_S = 120
+WAKE_TIMEOUT_S = 180
 
 
 def _request(method: str, url: str, **kw) -> requests.Response:
@@ -46,10 +46,12 @@ def _request(method: str, url: str, **kw) -> requests.Response:
     try:
         while True:
             try:
-                r = requests.request(method, API + url, timeout=120, headers=HEADERS, **kw)
+                # oyanma zamanı tək sorğu bütün gözləmə müddətini yeməsin
+                r = requests.request(method, API + url, timeout=60 if method == "GET" else 120,
+                                     headers=HEADERS, **kw)
                 if r.status_code not in WAKE_STATUS or method != "GET":
                     return r
-            except requests.ConnectionError:
+            except (requests.ConnectionError, requests.Timeout):
                 if method != "GET":
                     raise
                 r = None
@@ -58,7 +60,7 @@ def _request(method: str, url: str, **kw) -> requests.Response:
                     raise requests.ConnectionError("API cavab vermir")
                 return r
             if note is None:
-                note = st.info("API oyanır (pulsuz serverdə ilk açılış 1 dəqiqəyə qədər çəkir)...")
+                note = st.info("Server oyanır. Pulsuz serverdə ilk açılış 1–2 dəqiqə çəkir, səhifəni bağlamayın.")
             time.sleep(5)
     finally:
         if note is not None:
@@ -83,7 +85,7 @@ def api(method: str, url: str, **kw):
         return None
 
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=30, show_spinner="Serverə qoşulur...")
 def _stations_cached():
     res = api("GET", "/stations")
     if not res:

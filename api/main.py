@@ -19,7 +19,8 @@ import numpy as np
 import pandas as pd
 import os
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from core.config import load_config, path, stations
@@ -28,7 +29,7 @@ from data.pipeline import load_hourly
 from decision.alerts import evaluate_alerts, limits, save_limits
 from decision.recommendations import recommendations
 from external.common import read_status
-from models.predict import get_service
+from models.predict import get_service, service_ready
 
 log = logging.getLogger("api")
 
@@ -95,9 +96,32 @@ def _ingest() -> dict:
     return {"rows": int(len(hourly)), "data_end": {s: str(g.ts.max()) for s, g in hourly.groupby("station")}}
 
 
+_LOAD = {"busy": False, "error": None, "failed_at": 0.0}
+_LOAD_LOCK = threading.Lock()
+RETRY_AFTER_FAIL_S = 30
+
+
+def _warm_up():
+    """Model və data fonda yüklənir: port dərhal açılır, Render proxy-si 502 qaytarmır."""
+    with _LOAD_LOCK:
+        if _LOAD["busy"]:
+            return
+        _LOAD["busy"] = True
+    t0 = time.monotonic()
+    try:
+        get_service()
+        _LOAD["error"] = None
+        log.info("Servis hazırdır (%.0f s)", time.monotonic() - t0)
+    except Exception as e:
+        _LOAD.update(error=str(e), failed_at=time.monotonic())
+        log.exception("Servis yüklənmədi")
+    finally:
+        _LOAD["busy"] = False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    get_service()
+    threading.Thread(target=_warm_up, daemon=True).start()
     stop = threading.Event()
     t = threading.Thread(target=_watch_incoming, args=(stop,), daemon=True)
     t.start()
@@ -107,6 +131,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Qaz sərfiyyatı proqnozu — Operator API", version="0.1.0", lifespan=lifespan)
 V1 = "/api/v1"
+NEEDS_NO_SERVICE = (f"{V1}/health", f"{V1}/control/")  # control: model olmadan da həmişə 403
+
+
+@app.middleware("http")
+async def _wait_for_service(request: Request, call_next):
+    """Model hələ yüklənirsə data sorğularına 503 (panel bunu gözləyib təkrarlayır)."""
+    p = request.url.path
+    if p.startswith(V1) and not p.startswith(NEEDS_NO_SERVICE) and not service_ready():
+        err = _LOAD["error"]
+        if err and not _LOAD["busy"] and time.monotonic() - _LOAD["failed_at"] > RETRY_AFTER_FAIL_S:
+            threading.Thread(target=_warm_up, daemon=True).start()
+        detail = f"Model yüklənmədi: {err}" if err else "Model yüklənir, bir neçə saniyədən sonra yenidən cəhd edin"
+        return JSONResponse({"detail": detail}, status_code=503, headers={"Retry-After": "5"})
+    return await call_next(request)
 
 
 def _check(sid: str):
